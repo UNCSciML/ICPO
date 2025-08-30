@@ -1,5 +1,5 @@
 set -euo pipefail
-ROOT=/work/users/y/x/yxyang/ICRL
+ROOT=/work/users/y/x/yxyang/ICRL # Set root of ICRL
 export HF_HOME="$ROOT/models"
 export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
 

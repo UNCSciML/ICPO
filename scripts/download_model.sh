@@ -1,7 +1,7 @@
 set -e
 ROOT="$(dirname "$(dirname "${BASH_SOURCE[0]}")")" 
 export HF_HOME="$ROOT/models"          # optional central cache
-export HUGGINGFACE_HUB_TOKEN="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"  # <-- your token
+export HUGGINGFACE_HUB_TOKEN="HF_TOKEN"  # <-- your token
 
 PY_SCRIPT="$ROOT/models/download.py"
 
