@@ -33,6 +33,7 @@ MODEL_MAP: Dict[str, str] = {
     # Math base
     "Qwen2.5-Math-1.5B": "Qwen/Qwen2.5-Math-1.5B",
     "Qwen2.5-Math-7B": "Qwen/Qwen2.5-Math-7B",
+    "Qwen2.5-Math-72B": "Qwen/Qwen2.5-Math-72B",
     # Vanilla base
     "Qwen2.5-7B": "Qwen/Qwen2.5-7B",
     "Qwen2.5-32B": "Qwen/Qwen2.5-32B",

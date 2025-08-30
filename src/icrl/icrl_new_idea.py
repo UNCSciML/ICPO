@@ -1,5 +1,5 @@
 # =============================================================
-# File: src/icrl/icrl0_runner.py          (rev 2025‑08‑30‑m)
+# File: src/icrl/icrl0_runner.py          (rev 2025‑07‑06‑m)
 # =============================================================
 """
 ICRL‑0 – compressed, English‑only  (稳定版 + DEBUG).
@@ -47,7 +47,6 @@ _LETTER     = re.compile(r"\b([A-E])\b", re.I)
 _SENT_SPLIT = re.compile(r"[.!?]")
 
 ENABLE_PENALTY = None
-SUMMARY_LEN= 500
 def debug_jsonl(filename: Union[str, Path], data: dict):
     """
     将单个 dict 写入 JSONL 文件，每行一个 JSON 对象。
@@ -180,77 +179,109 @@ def strip_reasoning(txt: str) -> str:
 
 # ---------- prompt builders ----------
 
-SYS_PROMPT = (
-    "You are an AI mathematician. All content you output MUST be in English.\n"
-    "**You are only allowed to provide explanations in plain English. Do NOT write any code, pseudocode, or technical snippets. Explain the concept of XYZ in detail.**"
-    "Below are compressed solution ideas from previous attempts; each idea is tagged "
-    "with reward 1 (correct) or reward 0 (incorrect). Use the question and these ideas "
-    "to deduce the correct numeric answer.\n"
-    "**Finish all your reasoning, then on a NEW line output exactly one number "
-    "(the answer) and nothing else.**\n"
-    "Your final output MUST be in the format boxed{<number>}, where <number> is the "
-    "final numeric answer only (no expressions, variables, or additional text)."
-    "The content inside boxed{ } must be a decimal number, not a fraction or any other form."
-    
-)
-def build_prompt(q: str, hist: Dict[str, List[str]]) -> str:
-    lines = [SYS_PROMPT.rstrip(), "", q.rstrip(), ""]
-    lines.append("bad ideas (reward 0):")
-    lines += [f"[{i}]- {s}" for i,s in enumerate(hist["bad"])]
-    lines.append("")
-    lines.append("good ideas (reward 1):")
-    lines += [f"[{i}]- {s}" for i,s in enumerate(hist["good"])]
+SYS_PROMPT = """
+You are an AI mathematician, and you must always respond in English.
+
+Your answers must be clear explanations in plain English only.  
+- Do NOT include code, pseudocode, equations, or technical snippets.  
+- Focus on step-by-step reasoning and concept clarification.  
+
+You will also be given compressed solution ideas from earlier questions.  
+These are NOT answers to the current question.  
+They are only examples of reasoning style to guide how you explain your solution.  
+
+For the current question, you must combine its details with the reasoning style of the examples to deduce the correct numeric answer.
+
+After finishing all reasoning, output your final answer on a new line, in the exact format:
+
+boxed{<number>}
+
+where <number> is the final numeric result only (a decimal number, not a fraction or expression).  
+Do not include any other text in the final output.
+"""
+
+
+def build_prompt_from_training(cur_q: str, hist: List[dict],cur_idx =None) -> str:
+    lines = [SYS_PROMPT.rstrip(), "", "Previous questions and answers:", ""]
+    if DEBUG:
+            logging.info(f"[eval] cur_idx = {cur_idx}")
+    if hist !=[]:
+        for i,h in enumerate(hist):
+            idx =h['idx']
+            sum=h['sum']
+            q=h['question']
+            # label =h['label']
+            if idx!=cur_idx:
+                print(f"cur_idx:{cur_idx},idx:{idx}")
+                lines.append(f"previous question [{i}]:{q}\n answer of [{i}]:{sum}\n")
+    else:
+        lines.append("None.")
+                
+    lines.append(f"current question:{cur_q}\ncurrent answer:")
     return "\n".join(lines).rstrip()
 
-def delete_with_entropy(q:str,h: Dict[str, List[str]],model,tok,args,max_new):
-    if len(h['good']) > MAX_KEEP:
-        to_delete = h['good']
-        to_keep = h['bad']
-        delete_key = 'good'
-        keep_key = 'bad'
-    else:
-        to_delete = h['bad']
-        to_keep = h['good']
-        delete_key = 'bad'
-        keep_key = 'good'
+# def delete_with_entropy(q:str,h: Dict[str, List[str]],model,tok,args,max_new):
+#     if len(h['good']) > MAX_KEEP:
+#         to_delete = h['good']
+#         to_keep = h['bad']
+#         delete_key = 'good'
+#         keep_key = 'bad'
+#     else:
+#         to_delete = h['bad']
+#         to_keep = h['good']
+#         delete_key = 'bad'
+#         keep_key = 'good'
 
-    prompts = []
-    for i in range(len(to_delete)):
-        new_delete_list = to_delete[:i] + to_delete[i+1:]
-        new_h = {
-            delete_key: new_delete_list,
-            keep_key: to_keep.copy() 
-        }
-        prompts.append(build_prompt(q,new_h))
-    new_batch = generate_batch(model, tok, prompts, args.entropy_k, max_new, args.temp, args.top_p)
-    entropies = [_get_entropy(lst,args.entropy_k) for lst in new_batch]
-    if DEBUG:
-            logging.info(f"[eval] delete entropy  = {entropies}")
-    if any(e is not None for e in entropies):
-        min_idx = min(
-            [(i, e) for i, e in enumerate(entropies) if e is not None],
-            key=lambda x: x[1]
-        )[0]
-    else:
-        min_idx = 0 #如果entropy都算不了 就删第一个
-    del to_delete[min_idx]
+#     prompts = []
+#     for i in range(len(to_delete)):
+#         new_delete_list = to_delete[:i] + to_delete[i+1:]
+#         new_h = {
+#             delete_key: new_delete_list,
+#             keep_key: to_keep.copy() 
+#         }
+#         prompts.append(build_prompt(q,new_h))
+#     new_batch = generate_batch(model, tok, prompts, args.entropy_k, max_new, args.temp, args.top_p)
+#     entropies = [_get_entropy(lst,args.entropy_k) for lst in new_batch]
+#     if DEBUG:
+#             logging.info(f"[eval] delete entropy  = {entropies}")
+#     if any(e is not None for e in entropies):
+#         min_idx = min(
+#             [(i, e) for i, e in enumerate(entropies) if e is not None],
+#             key=lambda x: x[1]
+#         )[0]
+#     else:
+#         min_idx = 0 #如果entropy都算不了 就删第一个
+#     del to_delete[min_idx]
 
 
     
 # ---------- update history ----------
-def update_history(h: Dict[str, List[str]], summary: str, reward: bool, q:str, model, tok, args, max_new):
-    """写入摘要到对应桶，并截断长度。summary 已保证非空。"""
-    bucket = h["good"] if reward else h["bad"]
-    if summary ==None:return 
-    bucket.append(summary)
-    if len(bucket)>MAX_KEEP and args.entropy ==True:#此时根据entropy来删多余任务
-        delete_with_entropy(q,h,model,tok,args,max_new)
-    del bucket[:-MAX_KEEP]        # 只保留最后 MAX_KEEP 条
+# def update_history(h: Dict[str, List[str]], summary: str, reward: bool, q:str, model, tok, args, max_new):
+#     """写入摘要到对应桶，并截断长度。summary 已保证非空。"""
+#     bucket = h["good"] if reward else h["bad"]
+#     if summary ==None:return 
+#     bucket.append(summary)
+#     if len(bucket)>MAX_KEEP and args.entropy ==True:#此时根据entropy来删多余任务
+#         delete_with_entropy(q,h,model,tok,args,max_new)
+#     del bucket[:-MAX_KEEP]        # 只保留最后 MAX_KEEP 条
 
 # ---------- LLM wrappers ----------
 def _gen(model, tok, prompt: str, max_new: int,
          temp: float, top_p: float) -> str:
-
+    # enc = tok(prompt, return_tensors="pt").to(model.device)
+    # with torch.no_grad():
+    #     out = model.generate(
+    #         **enc,
+    #         max_new_tokens=max_new,
+    #         min_new_tokens=8,
+    #         do_sample=True,
+    #         temperature=temp,
+    #         top_p=top_p,
+    #         repetition_penalty=1.1,
+    #         pad_token_id=tok.eos_token_id
+    #     )[0]
+    # return tok.decode(out[enc["input_ids"].shape[1]:],
+    #                   skip_special_tokens=True).strip()
     sampling_params = SamplingParams(
         n=1,
         temperature=temp,
@@ -269,7 +300,30 @@ def generate_batch(model, tok, prompts: List[str], n: int, max_new: int,
                    temp: float, top_p: float) -> List[List[str]]:
     if DEBUG and prompts:
         logging.info(f"[generate_batch] first prompt len={len(prompts[0])}")
-
+    # enc = tok(prompts, return_tensors="pt", padding=True).to(model.device)
+    # base_lens = enc["attention_mask"].sum(dim=1)
+    # with torch.no_grad():
+    #     out = model.generate(
+    #         **enc,
+    #         num_return_sequences=n,
+    #         max_new_tokens=max_new,
+    #         min_new_tokens=8,
+    #         do_sample=True,
+    #         temperature=temp,
+    #         top_p=top_p,
+    #         repetition_penalty=1.1,
+    #         pad_token_id=tok.eos_token_id
+    #     )
+    # out = out.view(len(prompts), n, -1).cpu()
+    # res: List[List[str]] = []
+    # for i in range(len(prompts)):
+    #     base_len = int(base_lens[i])
+    #     gens = [strip_reasoning(tok.decode(out[i, j, base_len:], skip_special_tokens=True))
+    #             for j in range(n)]
+    #     res.append(gens)
+    #     if DEBUG and i == 0:
+    #         logging.info(f"[generate_batch] sample gens={gens[:3]}")
+    # return res
     
     sampling_params = SamplingParams(
         n=n,                       # 等价于 num_return_sequences
@@ -299,17 +353,16 @@ def generate_batch(model, tok, prompts: List[str], n: int, max_new: int,
 
 # ---------- summarisation ----------
 _SUMMARY_PROMPT = (
-    "Provide a concise summary of the reasoning in the answer below. "
-    "Do NOT add any introductory phrases or extra explanations. "
-    "Omit all numerical calculations. "
-    "The summary must be self-contained, no more than 100 tokens.\n\n"
-    "If there is a final numeric result, include it at the end in the format boxed{{<number>}} "
-    "(decimal only, no fractions, variables, or extra text). "
-    "If there is no numeric answer, do not output boxed{{}}.\n\n"
+    "You will be given a question, an attempted reasoning process, and the ground truth answer, "
+    "which appears in the format label [<answer>]. "
+    "Your task is to provide a clear, concise summary of the reasoning that leads to the answer. "
+    "Do not include any numerical calculations. "
+    "The summary must be self-contained and no longer than 100 tokens. \n\n"
+    "At the end, include the final numeric result in the format boxed{{<number>}}, "
+    "where <number> is a decimal (no fractions, variables, or extra text). \n\n"
     "[Answer start]\n{}\n[Answer end]\n\n"
     "Summary:"
 )
-
 
 
 def _fallback_summary(ans_raw: str) -> str:
@@ -318,13 +371,12 @@ def _fallback_summary(ans_raw: str) -> str:
     first = re.sub(r"[^A-Za-z\s]", " ", first).strip()
     return first or "reasoning unavailable"
 
-def _compress_answer(ans_raw: str, model, tok,output_dir=None) -> str:
-    global SUMMARY_LEN
+def _compress_train_answer(ans_raw: str, model, tok,output_dir=None) -> str:
     if not ans_raw.strip():
         return ""
     prompt = _SUMMARY_PROMPT.format(ans_raw.strip())
-    summary = _gen(model, tok, prompt, max_new=SUMMARY_LEN, temp=0.05, top_p=0.9).strip()
-    summary = summary if summary else _fallback_summary(ans_raw)
+    summary = _gen(model, tok, prompt, max_new=500, temp=0.05, top_p=0.9).strip()
+    summary = summary
     if output_dir:
         debug_jsonl(output_dir/"debug.jsonl",{"ans_raw":ans_raw,"summary":summary})
     return summary
@@ -334,78 +386,10 @@ def mean_at_k(preds, refs):
     return sum(sum(_normalize(c) == _normalize(r) for c in cand)/len(cand)
                for cand, r in zip(preds, refs)) / len(preds)
 
-# =============================================================
-
-
-def choose_entropy(pseudo, k_batch, qs, hist, model, tok, args, cache, max_new,out_dir):
-    import copy
-    from dataclasses import dataclass
-    import random
-
-    @dataclass
-    class Candidate:
-        idx: int
-        summary: str
-        reward: bool
-        hist: list
-        question: str
-
-    selected_samples = []
-
-    for i, (h, anss_raw, pseudo_raw) in enumerate(zip(hist, k_batch, pseudo)):
-        candidates = []
-
-        for j, ans_raw in enumerate(anss_raw):
-            ans_nom= _normalize(ans_raw)
-            reward  = ans_nom and ans_nom == _normalize(pseudo_raw)
-
-            summary = _compress_answer(ans_raw, model, tok,out_dir).strip()#对每个candidates summary后加入到临时hist中 跑并计算entropy
-          
-            if summary and ans_nom is not None:
-                summary+=  f"\nThus, the answer is boxed{{{ ans_nom }}}"   
-                new_hist = copy.deepcopy(h) 
-                update_history(new_hist, summary, reward, qs[i], model, tok, args, max_new)
-                candidates.append(Candidate(j, summary, reward, new_hist, qs[i]))
-        if DEBUG:
-            logging.info(f"[eval] len candidates sample = {len(candidates)}")
-        if len(candidates) == 0:
-            selected_idx = random.randrange(args.k)
-            selected_samples.append((None, 0, qs[i]))  # summary 是空的 此时所有candidates都不行，直接跳过这个question
-            continue
-
-        if len(candidates) == 1:
-            selected_idx=candidates[0].idx
-            selected_samples.append((candidates[0].summary, candidates[0].reward, qs[i]))#summary 只有一个 就选这个了，也不用算entropy
-            continue
-       
-        # 多个候选摘要时，用 entropy 选择
-        prompts = [build_prompt(c.question, c.hist) for c in candidates]
-        new_batch = generate_batch(model, tok, prompts, args.entropy_k, max_new, args.temp, args.top_p)
-        entropies = [_get_entropy(lst,args.entropy_k) for lst in new_batch]
-        if DEBUG:
-            logging.info(f"[eval] entropy sample = {entropies}")
-        if any(e is not None for e in entropies):
-            min_idx = min(
-                [(i, e) for i, e in enumerate(entropies) if e is not None],
-                key=lambda x: x[1]
-            )[0] # 如果有能计算entropy的，选择argmin
-        else:
-            min_idx = random.randint(0, len(candidates) - 1)#没有能计算entropy的 随便选一个
-
-        selected = candidates[min_idx]
-        if DEBUG:
-            logging.info(f"[eval] min_idx = {min_idx}")
-        selected_samples.append((selected.summary, selected.reward, qs[i]))
-    for h,new_ans in zip(hist,selected_samples):
-        summary,reward, q = new_ans
-        if summary:
-            update_history(h,summary,reward, q, model, tok, args, max_new)
 
      
 def set_global_variable(args):
     global ENABLE_PENALTY
-    global SUMMARY_LEN
-    SUMMARY_LEN=args.summary_length
     ENABLE_PENALTY=args.enable_penalty
             
 def main():
@@ -420,13 +404,13 @@ def main():
     ap.add_argument("--top_p",  type=float, default=cfg("top_p", 0.95))
     ap.add_argument("--ctx",    type=int,   default=cfg("context_len", 3072))
     ap.add_argument("--rounds", type=int,   default=cfg("rounds", 3))
-    ap.add_argument("--entropy",type = bool,default= cfg("entropy", True))
+    ap.add_argument("--entropy",type = bool,default= False)
     ap.add_argument("--entropy_k",type = int,default= cfg("entropy_k", 16))
-    ap.add_argument("--enable_penalty",type =bool,default =cfg("entropy_penalty", True))
-    ap.add_argument("--summary_length",type = int ,default = cfg("summary_length",500))
+    ap.add_argument("--enable_penalty",type =bool,default =False)
+    ap.add_argument("--train_sample",type = bool,default =5)
     ap.add_argument_group
     args = ap.parse_args()
-    
+
     set_global_variable(args)
 
     
@@ -449,7 +433,12 @@ def main():
         )
         logging.info("DEBUG MODE ON")
 
+    # tok = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     args.model_path, torch_dtype=torch.float16,
+    #     device_map="balanced", trust_remote_code=True).eval()
 
+  
 
     model = LLM( # 用VLLM 因为其运行速度更快，支持prefix caching等
         model=args.model_path,
@@ -467,62 +456,48 @@ def main():
         "parquet" if file.endswith(".parquet") else "json",
         data_files=str(ds_path / file), split="train"
     )
-
-    cache = PromptCache(out_dir / ".prompt_cache")
+    train_file = "train.parquet" if (ds_path / "train.parquet").exists() else "train.json"
+    train_dataset = load_dataset(
+        "parquet" if train_file.endswith(".parquet") else "json",
+        data_files=str(ds_path / train_file), split="train"
+    )
+    train_dataset = train_dataset.select(range(args.train_sample))
+  
     preds, refs, ans_records = [], [], []
     wrote_example = False
 
-    pbar = tqdm(range(0, len(dataset), args.batch), unit="batch", desc="ICRL‑0‑m")
+    pbar = tqdm(range(0, len(train_dataset), args.batch), unit="batch", desc="ICRL‑0‑train")
+    train_history = []
+    for st in pbar:
+        ed  = min(st + args.batch, len(train_dataset))
+        sub = train_dataset.select(range(st, ed))
+        qs  = [ex.get("prompt") or ex["problem"] for ex in sub]
+        refs_batch = [ex.get("answer") or ex.get("solution") or "" for ex in sub]
+        refs += refs_batch
+        prompts = []
+        for q in qs:
+            prompt= build_prompt_from_training(q,train_history)
+            prompts.append(prompt)
+        max_new = max(32, args.ctx - max(len(tok(p).input_ids) for p in prompts))
+        k_batch = generate_batch(model, tok, prompts,1, #generate answer for each input
+                                     max_new, args.temp, args.top_p)
+        for idx, (q, raw_ans, ref) in enumerate(zip(qs,k_batch,refs_batch)):
+            ran_ans_with_label= f"question:{q}\n answer:"+raw_ans[0]+f"\nlabel: [{ref}] "
+            summary =_compress_train_answer(ran_ans_with_label,model,tok,out_dir)
+            summary+=f"Thus, the answer is boxed{ {_normalize(ref)} }"
+            if summary:
+                train_history.append({"question":q,'idx':st+idx,'label':_normalize(ref),'sum':summary})
 
+    pbar = tqdm(range(0, len(dataset), args.batch), unit="batch", desc="ICRL‑0‑m")
+    if DEBUG:
+        logging.debug(f"[train_history] {[d['idx'] for d in train_history]}")
     for st in pbar:
         ed  = min(st + args.batch, len(dataset))
         sub = dataset.select(range(st, ed))
         qs  = [ex.get("prompt") or ex["problem"] for ex in sub]
-        refs_batch = [ex.get("answer") or ex.get("solution") or "" for ex in sub]
-        refs += refs_batch
-
-        hist = [{"good": [], "bad": []} for _ in sub]
-
-        # ---------- bootstrap ----------
-        for r in range(1, args.rounds + 1):
-            prompts = []
-            for q, h in zip(qs, hist):
-                key = f"{hash(q)}-r{r}-g{len(h['good'])}-b{len(h['bad'])}"
-                p   = cache.get(key) or build_prompt(q, h)
-                cache.put(key, p); prompts.append(p)
-
-            max_new = max(32, args.ctx - max(len(tok(p).input_ids) for p in prompts))
-            k_batch = generate_batch(model, tok, prompts, args.k,
-                                     max_new, args.temp, args.top_p)
-            pseudo  = [_majority_raw(lst) for lst in k_batch]
-
-            if args.entropy ==False:
-                rand_idx = [random.randrange(args.k) for _ in prompts]
-                picked   = [lst[i] for lst, i in zip(k_batch, rand_idx)]
-
-                for q, h, ans_raw, pseudo_raw in zip(q,hist, picked, pseudo):
-                    ans_nom=_normalize(ans_raw)
-                    reward  =ans_nom and ans_nom == _normalize(pseudo_raw)
-                    summary = _compress_answer(ans_raw, model, tok,out_dir).strip()
-                    if summary and ans_nom is not None:
-                        summary+= f"\nThus, the answer is boxed{{{ ans_nom }}}"                      # 只记录非空摘要
-                        update_history(h, summary, reward, q, model, tok, args, max_new)
-            else:# 判断是否需要计算entropy
-                choose_entropy(
-                    pseudo=pseudo,
-                    k_batch=k_batch,
-                    qs=qs,
-                    hist=hist,
-                    model = model,
-                    tok =tok,
-                    args= args,
-                    cache = cache,
-                    max_new=max_new,
-                    out_dir=out_dir
-                )
-
         # ---------- evaluation ----------
-        final_prompts = [build_prompt(q, h) for q, h in zip(qs, hist)]
+
+        final_prompts = [build_prompt_from_training(q, train_history,i+st) for i,q in enumerate(qs)]
         max_new = max(32, args.ctx - max(len(tok(p).input_ids) for p in final_prompts))
         final_k = generate_batch(model, tok, final_prompts, args.k,
                                  max_new, args.temp, args.top_p)

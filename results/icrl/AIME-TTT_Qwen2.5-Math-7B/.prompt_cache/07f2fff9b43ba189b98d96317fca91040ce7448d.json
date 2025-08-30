@@ -1,1 +1,0 @@
-{"prompt": "There exist real numbers $x$ and $y$, both greater than 1, such that $\\log_x\\left(y^x\\right)=\\log_y\\left(x^{4y}\\right)=10$. Find $xy$.\n\n### Round 1\n- 25  – reward 1\n\n### Round 2\n- 25  – reward 1"}

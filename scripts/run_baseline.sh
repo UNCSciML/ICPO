@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT=/home/jovyan/ICRL
+ROOT=/work/users/y/x/yxyang/ICRL/ICRL
 export HF_HOME="$ROOT/models"
 export PYTHONPATH="${PYTHONPATH:-}"
 CSV_PATH="$ROOT/results/baseline/metrics.csv"
