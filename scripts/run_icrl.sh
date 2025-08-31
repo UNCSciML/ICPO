@@ -14,19 +14,21 @@ cfg=yaml.safe_load(open("$CONFIG"))
 print(cfg.get("$1"))
 PY
 }
-BATCH=$(read_cfg batch)
-ROUNDS=$(read_cfg rounds)
+
 
 single_run () {
   local MODEL="$1"; local TASK="$2"
   local OUTDIR="$ROOT/results/icrl/${TASK}_${MODEL}"
-  echo "[RUN] $MODEL | $TASK | batch=$BATCH | rounds=$ROUNDS"
+  if [ -d "$ROOT/models/$MODEL" ]; then
+    MODEL_PATH="$ROOT/models/$MODEL" # else go default hf save cache
+  fi
+  echo "[RUN] $MODEL | $TASK | "
   python -m icrl.icrl_runner \
-    --model_path "$ROOT/models/$MODEL" \
+    --model_path "$MODEL_PATH" \
     --task_dir   "$ROOT/data/$TASK"   \
     --output_dir "$OUTDIR"            \
     --csv_path   "$CSV_PATH"          \
-    --batch "$BATCH" --rounds "$ROUNDS"
+    
 }
 
 if [[ "${1:-}" == "all" ]]; then

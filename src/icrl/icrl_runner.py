@@ -20,7 +20,8 @@ from typing import List, Dict, Any,Union
 import math
 
 
-
+import sys
+import os
 import torch, yaml
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -32,11 +33,35 @@ from icrl.prompt_cache import PromptCache
 DEBUG = True      # ⇦ 如无需日志，改为 False
 MAX_KEEP = 5      # 每类历史最多保留条数
 TENSOR_PARALLEL = torch.cuda.device_count()
-
+ALLOW_OVERWRITE= True
 
 ROOT_DIR   = Path(__file__).resolve().parents[2]
 CONFIG_YML = ROOT_DIR / "configs" / "icrl.yaml"
 _cfg: Dict[str, Any] = yaml.safe_load(CONFIG_YML.open()) if CONFIG_YML.is_file() else {}
+
+
+def _overlay_from_env(base: Dict[str, Any]) -> Dict[str, Any]:
+    env_map = {
+        "summary_length": ("ENV_SUMMARY_LEN", int),
+        "context_len":    ("ENV_CONTEXT_LEN", int),
+        "k":              ("ENV_K", int),
+        "rounds":         ("ENV_ROUNDS", int),
+        "entropy_k":      ("ENV_ENTROPY_K", int),
+    }
+
+    out = dict(base)
+    for cfg_key, (env_key, caster) in env_map.items():
+        val = os.environ.get(env_key)
+       
+        if val is not None and val != "":
+            try:
+                out[cfg_key] = caster(val)
+            except Exception:
+                out[cfg_key] = val
+    return out
+
+if ALLOW_OVERWRITE:
+    _cfg = _overlay_from_env(_cfg)
 def cfg(k, d): return _cfg.get(k, d)
 
 # ---------- regex ----------
@@ -428,6 +453,7 @@ def main():
     args = ap.parse_args()
     
     set_global_variable(args)
+
 
     
     

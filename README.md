@@ -12,7 +12,7 @@ $ conda activate ICRL
 
 $ bash scripts/run_icrl.sh Qwen2.5-Math-7B AIME-TTT
 
-
+Set ALLOW_OVERWRITE= True in run_icrl.py to overwrite hyperparameters 
 主要调整参数
 k:            64         # 每轮采样数量 
 
