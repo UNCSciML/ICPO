@@ -10,7 +10,7 @@ $ bash scripts/download_model.sh
 
 $ conda activate ICRL          
 
-$ bash scripts/run_icrl.sh Qwen2.5-Math-7B AIME-TTT
+$ bash scripts/run_icrl.sh  Qwen/Qwen2.5-Math-7B AIME-TTT
 
 Set ALLOW_OVERWRITE= True in run_icrl.py to overwrite hyperparameters 
 主要调整参数
