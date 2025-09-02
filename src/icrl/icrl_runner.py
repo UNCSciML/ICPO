@@ -28,15 +28,10 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from tqdm import tqdm
 from vllm import LLM,SamplingParams
 from icrl.prompt_cache import PromptCache
+from icrl.utility import *
+from icrl.utility import _normalize
 
-# ---------------- Config & Debug ----------------
-DEBUG = True      # ⇦ 如无需日志，改为 False
-MAX_KEEP = 5      # 每类历史最多保留条数
-TENSOR_PARALLEL = torch.cuda.device_count()
-ALLOW_OVERWRITE= True
 
-ROOT_DIR   = Path(__file__).resolve().parents[2]
-CONFIG_YML = ROOT_DIR / "configs" / "icrl.yaml"
 _cfg: Dict[str, Any] = yaml.safe_load(CONFIG_YML.open()) if CONFIG_YML.is_file() else {}
 
 
@@ -89,53 +84,7 @@ def debug_jsonl(filename: Union[str, Path], data: dict):
         json_line = json.dumps(data, ensure_ascii=False)
         f.write(json_line + "\n")
 
-def _extract_numeric(solution_str:str, method="strict")->str:
-    assert method in ["strict", "flexible"]
-    #from https://github.com/PRIME-RL/TTRL/blob/main/verl/verl/utils/reward_score/gsm8k.py, modify the search patteren into boxed{}
-    if method == "strict":
-        # match \boxed{number}
-        solution = re.findall(r"\\boxed\{(\-?[0-9\.\,]+)\}", solution_str)
-        if not solution: 
-            final_answer = None
-        else:
-            final_answer = solution[-1].replace(",", "").replace("$", "")
-    elif method == "flexible":
-        answer = re.findall("(\\-?[0-9\\.\\,]+)", solution_str)
-        final_answer = None
-        if len(answer) == 0:
-            # no reward is there is no answer
-            pass
-        else:
-            invalid_str = ["", "."]
-            # find the last number that is not '.'
-            for final_answer in reversed(answer):
-                if final_answer not in invalid_str:
-                    break
-    return final_answer
 
-def _normalize(ans: str) -> float:
-    raw = ans
-    if re.fullmatch(r"-?\d+(\.\d+)?", ans.strip()):  # if input is a str of number
-        ans = ans.strip()
-    else:
-        ans = _extract_numeric(ans)
-    if ans is None:
-        return None
-    ans = ans.replace("$", "").replace(",", "").replace(" ", "")
-    if ans.startswith("+"):
-        ans = ans[1:]
-    if ans.endswith("."):
-        ans = ans[:-1]
-    
-    try:
-        ans_float = float(ans)
-    except ValueError:
-        return None
-    
-    if DEBUG:
-        logging.debug(f"[normalize] '{raw[:40]}' -> {ans_float}")
-    
-    return ans_float
 
 def _majority_raw(lst: List[str]) -> str:
     cnt, raw = {}, {}
@@ -205,19 +154,7 @@ def strip_reasoning(txt: str) -> str:
 
 # ---------- prompt builders ----------
 
-SYS_PROMPT = (
-    "You are an AI mathematician. All content you output MUST be in English.\n"
-    "**You are only allowed to provide explanations in plain English. Do NOT write any code, pseudocode, or technical snippets. Explain the concept of XYZ in detail.**"
-    "Below are compressed solution ideas from previous attempts; each idea is tagged "
-    "with reward 1 (correct) or reward 0 (incorrect). Use the question and these ideas "
-    "to deduce the correct numeric answer.\n"
-    "**Finish all your reasoning, then on a NEW line output exactly one number "
-    "(the answer) and nothing else.**\n"
-    "Your final output MUST be in the format boxed{<number>}, where <number> is the "
-    "final numeric answer only (no expressions, variables, or additional text)."
-    "The content inside boxed{ } must be a decimal number, not a fraction or any other form."
-    
-)
+
 def build_prompt(q: str, hist: Dict[str, List[str]]) -> str:
     lines = [SYS_PROMPT.rstrip(), "", q.rstrip(), ""]
     lines.append("bad ideas (reward 0):")
@@ -322,18 +259,7 @@ def generate_batch(model, tok, prompts: List[str], n: int, max_new: int,
 
     return res
 
-# ---------- summarisation ----------
-_SUMMARY_PROMPT = (
-    "Provide a concise summary of the reasoning in the answer below. "
-    "Do NOT add any introductory phrases or extra explanations. "
-    "Omit all numerical calculations. "
-    "The summary must be self-contained, no more than 100 tokens.\n\n"
-    "If there is a final numeric result, include it at the end in the format boxed{{<number>}} "
-    "(decimal only, no fractions, variables, or extra text). "
-    "If there is no numeric answer, do not output boxed{{}}.\n\n"
-    "[Answer start]\n{}\n[Answer end]\n\n"
-    "Summary:"
-)
+
 
 
 
@@ -430,8 +356,23 @@ def choose_entropy(pseudo, k_batch, qs, hist, model, tok, args, cache, max_new,o
 def set_global_variable(args):
     global ENABLE_PENALTY
     global SUMMARY_LEN
+    global BENCHMARK
+    global SYS_PROMPT
+    global _SUMMARY_PROMPT
     SUMMARY_LEN=args.summary_length
     ENABLE_PENALTY=args.enable_penalty
+    if "AIME" in args.task_dir:
+        BENCHMARK = "AIME"
+    elif "AMC" in args.task_dir:
+        BENCHMARK = "AMC"
+    elif "GPQA" in args.task_dir:
+        BENCHMARK = "GPQA"
+    elif "MATH" in args.task_dir:
+        BENCHMARK = "MATH"
+    else:
+        print("Not a valid benchmark")
+        sys.exit(1)
+    SYS_PROMPT,_SUMMARY_PROMPT=get_prompt(BENCHMARK)
             
 def main():
     ap = argparse.ArgumentParser()
@@ -549,7 +490,7 @@ def main():
 
         # ---------- evaluation ----------
         final_prompts = [build_prompt(q, h) for q, h in zip(qs, hist)]
-        max_new = max(32, args.ctx - max(len(tok(p).input_ids) for p in final_prompts))
+        max_new = min(1500, args.ctx - max(len(tok(p).input_ids) for p in final_prompts))
         final_k = generate_batch(model, tok, final_prompts, args.k,
                                  max_new, args.temp, args.top_p)
         preds += final_k

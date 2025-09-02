@@ -17,7 +17,7 @@ datasets:
   - GPQA-TTT
 
 # generation defaults
-k:            64         # 每轮采样数量 default 16
+k:            16         # 每轮采样数量 default 16
 temperature:  0.6
 top_p:        0.95
 context_len:  8192
