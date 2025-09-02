@@ -390,6 +390,7 @@ def main():
     ap.add_argument("--entropy_k",type = int,default= cfg("entropy_k", 16))
     ap.add_argument("--enable_penalty",type =bool,default =cfg("entropy_penalty", True))
     ap.add_argument("--summary_length",type = int ,default = cfg("summary_length",500))
+    ap.add_argument("--answer_length",type = int ,default = cfg("answer_length",5000))
     ap.add_argument_group
     args = ap.parse_args()
     
@@ -458,7 +459,7 @@ def main():
                 p   = cache.get(key) or build_prompt(q, h)
                 cache.put(key, p); prompts.append(p)
 
-            max_new = max(32, args.ctx - max(len(tok(p).input_ids) for p in prompts))
+            max_new = min(args.answer_length, args.ctx - max(len(tok(p).input_ids) for p in prompts))
             k_batch = generate_batch(model, tok, prompts, args.k,
                                      max_new, args.temp, args.top_p)
             pseudo  = [_majority_raw(lst) for lst in k_batch]
@@ -490,7 +491,7 @@ def main():
 
         # ---------- evaluation ----------
         final_prompts = [build_prompt(q, h) for q, h in zip(qs, hist)]
-        max_new = min(1500, args.ctx - max(len(tok(p).input_ids) for p in final_prompts))
+        max_new = min(args.answer_length, args.ctx - max(len(tok(p).input_ids) for p in final_prompts))
         final_k = generate_batch(model, tok, final_prompts, args.k,
                                  max_new, args.temp, args.top_p)
         preds += final_k

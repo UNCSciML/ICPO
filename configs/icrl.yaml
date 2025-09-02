@@ -27,3 +27,4 @@ entropy: True         #是否启用entropy 来挑选sample
 entropy_k:    16       #计算entropy时采样数量 default 16
 entropy_penalty : True  #是否在计算entropy启用penalty(如果一个答案不合法，entropy+= log(entropy_k)/entropy_k)
 summary_length : 500
+answer_length : 5000
