@@ -201,7 +201,7 @@ Do not include any other text in the final output.
 """
 
 
-def build_prompt_from_training(cur_q: str, hist: List[dict],cur_idx =None) -> str:
+def build_prompt_from_training(cur_q: str, hist: List[dict],cur_idx =None,answer = None) -> str:
     lines = [SYS_PROMPT.rstrip(), "", "Previous questions and answers:", ""]
     if DEBUG:
             logging.info(f"[eval] cur_idx = {cur_idx}")
@@ -216,8 +216,12 @@ def build_prompt_from_training(cur_q: str, hist: List[dict],cur_idx =None) -> st
                 lines.append(f"previous question [{i}]:{q}\n answer of [{i}]:{sum}\n")
     else:
         lines.append("None.")
-                
-    lines.append(f"current question:{cur_q}\ncurrent answer:")
+    if answer is None:
+        lines.append(f"current question:{cur_q}\ncurrent answer:")
+    else:
+        prompt=" Your task is to generate a concise reasoning path that leads naturally to this label, and then provide the final answer.\n"
+        prompt = f"current question:{cur_q}\n Ground truth label: {answer}\n current answer:"
+        lines.append(prompt)
     return "\n".join(lines).rstrip()
 
 # def delete_with_entropy(q:str,h: Dict[str, List[str]],model,tok,args,max_new):
@@ -416,7 +420,7 @@ def main():
     
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    out_dir = Path(f"{args.output_dir}_{timestamp}")
+    out_dir = Path(f"{args.output_dir}_new_idea_{timestamp}")
     out_dir.mkdir(parents=True, exist_ok=True)
     args_dict = vars(args)
     with open(out_dir / "args.json", "w", encoding="utf-8") as f:
@@ -475,8 +479,9 @@ def main():
         refs_batch = [ex.get("answer") or ex.get("solution") or "" for ex in sub]
         refs += refs_batch
         prompts = []
-        for q in qs:
-            prompt= build_prompt_from_training(q,train_history)
+        for q,ref in zip(qs,refs_batch):
+            ans = _normalize(ref)
+            prompt= build_prompt_from_training(q,train_history,answer= ans)
             prompts.append(prompt)
         max_new = max(32, args.ctx - max(len(tok(p).input_ids) for p in prompts))
         k_batch = generate_batch(model, tok, prompts,1, #generate answer for each input
