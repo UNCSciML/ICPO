@@ -4,7 +4,7 @@ export HF_HOME="$ROOT/models"
 export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
 
 CONFIG="$ROOT/configs/icrl_new_idea.yaml"
-CSV_PATH="$ROOT/results/icrl/metrics.csv"
+CSV_PATH="$ROOT/results/icrl_new_idea/metrics.csv"
 
 # 读取 YAML 缺省 batch & rounds
 read_cfg () {
@@ -15,18 +15,17 @@ print(cfg.get("$1"))
 PY
 }
 BATCH=$(read_cfg batch)
-ROUNDS=$(read_cfg rounds)
 
 single_run () {
   local MODEL="$1"; local TASK="$2"
-  local OUTDIR="$ROOT/results/icrl/${TASK}_${MODEL}"
-  echo "[RUN] $MODEL | $TASK | batch=$BATCH | rounds=$ROUNDS"
+  local OUTDIR="$ROOT/results/icrl_new_idea/${TASK}_${MODEL}"
+  echo "[RUN] $MODEL | $TASK | batch=$BATCH |"
   python -m icrl.icrl_new_idea \
     --model_path "$ROOT/models/$MODEL" \
     --task_dir   "$ROOT/data/$TASK"   \
     --output_dir "$OUTDIR"            \
     --csv_path   "$CSV_PATH"          \
-    --batch "$BATCH" --rounds "$ROUNDS"
+    --batch "$BATCH" 
 }
 
 if [[ "${1:-}" == "all" ]]; then
