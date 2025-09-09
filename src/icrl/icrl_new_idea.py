@@ -111,20 +111,6 @@ def _normalize(ans: str) -> float:
     
     return ans_float
 
-def _majority_raw(lst: List[str]) -> str:
-    cnt, raw = {}, {}
-    for a in lst:
-        k = _normalize(a)
-        if not k:
-            continue
-        cnt[k] = cnt.get(k, 0) + 1
-        raw.setdefault(k, a)
-    if not cnt:
-        return random.choice(lst)
-    top = max(cnt.values())
-    winners = [k for k, v in cnt.items() if v == top]
-    choice = random.choice(winners)
-    return raw[choice]
 
 def _get_entropy(lst: List[str], max_classes: int) -> float | None:
     """
@@ -199,10 +185,38 @@ boxed{<number>}
 where <number> is the final numeric result only (a decimal number, not a fraction or expression).  
 Do not include any other text in the final output.
 """
+def select_samples(lines,model,tok,args):
+    sys_prompt=lines[0]
+    current_QA=lines[-1]
+    samples=lines[1:-1]
+    entropy_ls = []
+    for idx,sample in enumerate(samples):
+        prompt_ls = [sys_prompt,sample,current_QA]
+        prompt = '\n'.join(prompt_ls).rstrip()
+        result= generate_batch(model =model,
+                       tok=tok,
+                       prompts=[prompt],
+                       n=args.entropy_k,
+                       max_new=args.answer_length,
+                       temp=args.temp,
+                       top_p=args.top_p
+                       )[0]
+        entropy = _get_entropy(result,args.entropy_k)
+        entropy_ls.append((idx,entropy))
+    entropy_sorted = sorted(entropy_ls, key=lambda x: x[1])
+    new_lines = [sys_prompt]
+    print("entropy_sorted",entropy_sorted)
+    for i in  range(args.max_num):
+        idx,entropy= entropy_sorted[i]
+        new_lines.append(samples[idx])
+    new_lines.append(current_QA)
+    return new_lines
 
 
-def build_prompt_from_training(cur_q: str, hist: List[dict],cur_idx =None,answer = None) -> str:
-    lines = [SYS_PROMPT.rstrip(), "", "Previous questions and answers:", ""]
+    
+
+def build_prompt_from_training(cur_q: str, hist: List[dict],cur_idx =None,answer = None,model=None,tok=None,args=None) -> str:
+    lines = [SYS_PROMPT.rstrip()+"\nPrevious questions and answers:\n"]
     if DEBUG:
             logging.info(f"[eval] cur_idx = {cur_idx}")
     if hist !=[]:
@@ -216,58 +230,19 @@ def build_prompt_from_training(cur_q: str, hist: List[dict],cur_idx =None,answer
                 lines.append(f"previous question [{i}]:{q}\n answer of [{i}]:{sum}\n")
     else:
         lines.append("None.")
+    max_num=args.max_num
     if answer is None:
         lines.append(f"current question:{cur_q}\ncurrent answer:")
     else:
         prompt=" Your task is to generate a concise reasoning path that leads naturally to this label, and then provide the final answer.\n"
         prompt = f"current question:{cur_q}\n Ground truth label: {answer}\n current answer:"
         lines.append(prompt)
+    if max_num!=None and len(lines)-2>max_num: # len(lines)= num(samples)+sys_prompt+question
+        lines = select_samples(lines,model,tok,args)
+        
     return "\n".join(lines).rstrip()
 
-# def delete_with_entropy(q:str,h: Dict[str, List[str]],model,tok,args,max_new):
-#     if len(h['good']) > MAX_KEEP:
-#         to_delete = h['good']
-#         to_keep = h['bad']
-#         delete_key = 'good'
-#         keep_key = 'bad'
-#     else:
-#         to_delete = h['bad']
-#         to_keep = h['good']
-#         delete_key = 'bad'
-#         keep_key = 'good'
 
-#     prompts = []
-#     for i in range(len(to_delete)):
-#         new_delete_list = to_delete[:i] + to_delete[i+1:]
-#         new_h = {
-#             delete_key: new_delete_list,
-#             keep_key: to_keep.copy() 
-#         }
-#         prompts.append(build_prompt(q,new_h))
-#     new_batch = generate_batch(model, tok, prompts, args.entropy_k, max_new, args.temp, args.top_p)
-#     entropies = [_get_entropy(lst,args.entropy_k) for lst in new_batch]
-#     if DEBUG:
-#             logging.info(f"[eval] delete entropy  = {entropies}")
-#     if any(e is not None for e in entropies):
-#         min_idx = min(
-#             [(i, e) for i, e in enumerate(entropies) if e is not None],
-#             key=lambda x: x[1]
-#         )[0]
-#     else:
-#         min_idx = 0 #如果entropy都算不了 就删第一个
-#     del to_delete[min_idx]
-
-
-    
-# ---------- update history ----------
-# def update_history(h: Dict[str, List[str]], summary: str, reward: bool, q:str, model, tok, args, max_new):
-#     """写入摘要到对应桶，并截断长度。summary 已保证非空。"""
-#     bucket = h["good"] if reward else h["bad"]
-#     if summary ==None:return 
-#     bucket.append(summary)
-#     if len(bucket)>MAX_KEEP and args.entropy ==True:#此时根据entropy来删多余任务
-#         delete_with_entropy(q,h,model,tok,args,max_new)
-#     del bucket[:-MAX_KEEP]        # 只保留最后 MAX_KEEP 条
 
 # ---------- LLM wrappers ----------
 def _gen(model, tok, prompt: str, max_new: int,
@@ -401,17 +376,20 @@ def main():
     ap.add_argument("--model_path", required=True)
     ap.add_argument("--task_dir",   required=True)
     ap.add_argument("--output_dir", required=True)
-    ap.add_argument("--csv_path",   default=f"{ROOT_DIR}/results/icrl0/metrics.csv")
+    ap.add_argument("--csv_path",   default=f"{ROOT_DIR}/results/icrl_new_idea/metrics.csv")
     ap.add_argument("--k",      type=int,   default=cfg("k", 16))
     ap.add_argument("--batch",  type=int,   default=cfg("batch", 4))
     ap.add_argument("--temp",   type=float, default=cfg("temperature", 0.6))
     ap.add_argument("--top_p",  type=float, default=cfg("top_p", 0.95))
     ap.add_argument("--ctx",    type=int,   default=cfg("context_len", 3072))
-    ap.add_argument("--rounds", type=int,   default=cfg("rounds", 3))
-    ap.add_argument("--entropy",type = bool,default= False)
+   
+ 
     ap.add_argument("--entropy_k",type = int,default= cfg("entropy_k", 16))
-    ap.add_argument("--enable_penalty",type =bool,default =False)
-    ap.add_argument("--train_sample",type = bool,default =5)
+    ap.add_argument("--enable_penalty",type =bool,default =True)
+    ap.add_argument("--answer_length",type = int,default =5000)
+    ap.add_argument("--train_sample",type = int,default =10)
+    ap.add_argument("--test_sample",type = int,default =None)
+    ap.add_argument("--max_num",type = int,default =5)
     ap.add_argument_group
     args = ap.parse_args()
 
@@ -460,6 +438,8 @@ def main():
         "parquet" if file.endswith(".parquet") else "json",
         data_files=str(ds_path / file), split="train"
     )
+    if args.test_sample is not None:
+        dataset=dataset.select(range(args.test_sample))
     train_file = "train.parquet" if (ds_path / "train.parquet").exists() else "train.json"
     train_dataset = load_dataset(
         "parquet" if train_file.endswith(".parquet") else "json",
@@ -477,11 +457,11 @@ def main():
         sub = train_dataset.select(range(st, ed))
         qs  = [ex.get("prompt") or ex["problem"] for ex in sub]
         refs_batch = [ex.get("answer") or ex.get("solution") or "" for ex in sub]
-        refs += refs_batch
+     
         prompts = []
         for q,ref in zip(qs,refs_batch):
             ans = _normalize(ref)
-            prompt= build_prompt_from_training(q,train_history,answer= ans)
+            prompt= build_prompt_from_training(q,train_history,answer= ans,model=model,tok=tok,args=args)
             prompts.append(prompt)
         max_new = max(32, args.ctx - max(len(tok(p).input_ids) for p in prompts))
         k_batch = generate_batch(model, tok, prompts,1, #generate answer for each input
@@ -496,13 +476,16 @@ def main():
     pbar = tqdm(range(0, len(dataset), args.batch), unit="batch", desc="ICRL‑0‑m")
     if DEBUG:
         logging.debug(f"[train_history] {[d['idx'] for d in train_history]}")
+    preds, refs, ans_records = [], [], []
     for st in pbar:
         ed  = min(st + args.batch, len(dataset))
         sub = dataset.select(range(st, ed))
         qs  = [ex.get("prompt") or ex["problem"] for ex in sub]
+        refs_batch = [ex.get("answer") or ex.get("solution") or "" for ex in sub]
+        refs+=refs_batch
         # ---------- evaluation ----------
 
-        final_prompts = [build_prompt_from_training(q, train_history,i+st) for i,q in enumerate(qs)]
+        final_prompts = [build_prompt_from_training(q, train_history,i+st,answer=None,model=model,tok=tok,args=args) for i,q in enumerate(qs)]
         max_new = max(32, args.ctx - max(len(tok(p).input_ids) for p in final_prompts))
         final_k = generate_batch(model, tok, final_prompts, args.k,
                                  max_new, args.temp, args.top_p)
@@ -552,7 +535,7 @@ def main():
     )
 
     metric = {"model": Path(args.model_path).name, "task": ds_path.name,
-              "mean@k": mean_k, "k": args.k, "rounds": args.rounds,
+              "mean@k": mean_k, "k": args.k,
               "batch": args.batch, "temp": args.temp, "top_p": args.top_p,
               "context_len": args.ctx,
               "timestamp": datetime.datetime.now().isoformat(timespec="seconds")}
@@ -561,6 +544,7 @@ def main():
 
     csv_path = Path(args.csv_path); csv_path.parent.mkdir(parents=True, exist_ok=True)
     head = not csv_path.exists()
+    print("csv_path",csv_path)
     with csv_path.open("a", newline="") as fp:
         w = csv.DictWriter(fp, fieldnames=list(metric.keys()))
         if head: w.writeheader()
