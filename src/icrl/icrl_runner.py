@@ -30,7 +30,7 @@ from vllm import LLM,SamplingParams
 from icrl.prompt_cache import PromptCache
 from icrl.utility import *
 from icrl.utility import _normalize
-
+from icrl.setting import setting
 
 _cfg: Dict[str, Any] = yaml.safe_load(CONFIG_YML.open()) if CONFIG_YML.is_file() else {}
 
@@ -274,6 +274,12 @@ def _compress_answer(ans_raw: str, model, tok,output_dir=None) -> str:
     if not ans_raw.strip():
         return ""
     prompt = _SUMMARY_PROMPT.format(ans_raw.strip())
+
+    model_name = model.llm_engine.model_config.model
+    if "7B" not in model_name:
+        prompt=prompt.replace("100",str(SUMMARY_LEN))
+
+    
     summary = _gen(model, tok, prompt, max_new=SUMMARY_LEN, temp=0.05, top_p=0.9).strip()
     summary = summary if summary else _fallback_summary(ans_raw)
     if output_dir:
@@ -356,23 +362,22 @@ def choose_entropy(pseudo, k_batch, qs, hist, model, tok, args, cache, max_new,o
 def set_global_variable(args):
     global ENABLE_PENALTY
     global SUMMARY_LEN
-    global BENCHMARK
     global SYS_PROMPT
     global _SUMMARY_PROMPT
     SUMMARY_LEN=args.summary_length
     ENABLE_PENALTY=args.enable_penalty
     if "AIME" in args.task_dir:
-        BENCHMARK = "AIME"
+        setting.BENCHMARK = "AIME"
     elif "AMC" in args.task_dir:
-        BENCHMARK = "AMC"
+        setting.BENCHMARK = "AMC"
     elif "GPQA" in args.task_dir:
-        BENCHMARK = "GPQA"
+        setting.BENCHMARK = "GPQA"
     elif "MATH" in args.task_dir:
-        BENCHMARK = "MATH"
+        setting.BENCHMARK = "MATH"
     else:
         print("Not a valid benchmark")
         sys.exit(1)
-    SYS_PROMPT,_SUMMARY_PROMPT=get_prompt(BENCHMARK)
+    SYS_PROMPT,_SUMMARY_PROMPT=get_prompt(setting.BENCHMARK)
             
 def main():
     ap = argparse.ArgumentParser()
@@ -516,7 +521,9 @@ def main():
                 f.write(json_line + "\n")
         # --------- record answers ---------
         for idx, (klist, ex, ref_raw) in enumerate(zip(final_k, sub, refs_batch)):
+
             ref_norm = _normalize(ref_raw)
+          
             cand_list = [{"raw": a,
                           "numeric": _normalize(a),
                           "correct": bool(_normalize(a) and _normalize(a) == ref_norm)}

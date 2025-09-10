@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import List, Dict, Any,Union
 import math
 import torch, yaml
+from icrl.setting import setting
 # ---------------- Config & Debug ----------------
 DEBUG = True      # ⇦ 如无需日志，改为 False
 MAX_KEEP = 5      # 每类历史最多保留条数
 TENSOR_PARALLEL = torch.cuda.device_count()
-ALLOW_OVERWRITE= False
-BENCHMARK= "AIME"
+ALLOW_OVERWRITE= True
+
 
 ROOT_DIR   = Path(__file__).resolve().parents[2]
 CONFIG_YML = ROOT_DIR / "configs" / "icrl.yaml"
@@ -124,11 +125,9 @@ def _normalize(solution_str: str):
             - GPQA: uppercase letter
             - MATH: string
     """
-    global BENCHMARK
-    benchmark = BENCHMARK
+    benchmark =setting.BENCHMARK
     solution_str = solution_str.strip()
     raw_ans = None
-
     # ---------------- 数字型答案 ----------------
     if benchmark in ["AIME", "AMC"]:
         # 优先尝试 boxed{}
