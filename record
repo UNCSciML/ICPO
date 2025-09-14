@@ -10,17 +10,28 @@ ICRL0: 现在的随机选择一个浪费了很多信息。假设我的里面最�
 
 
 
-运行脚本
-conda activate ICRL
-conda run -n ICRL  scripts/run_icrl.sh Qwen2.5-32B AIME-TTT
+# Qwen/Qwen2.5-Math-7B
 
-主要调整参数
-k:            64         # 每轮采样数量 
+Model=$1
 
-context_len:  8192
+if [ -z "$Model" ]; then
+  echo "Usage: $0 MODEL"
+  exit 1
+fi
 
-rounds:       5          # 轮数
-entropy: True         #是否启用entropy 来挑选sample
-entropy_k:    16       #计算entropy时采样数量 default 16
-entropy_penalty : True  #是否在计算entropy启用penalty(如果一个答案不合法，entropy+= log(entropy_k)/entropy_k)
+for k in 16; do
+  for entropy_k in 16 ; do
+    for rounds in 4 6 7 8; do
+      echo "running with k=$k, entropy_k=$entropy_k, rounds=$rounds"
 
+      ENV_SUMMARY_LEN=500 \
+      ENV_CONTEXT_LEN=16384 \
+      ENV_K=$k \
+      ENV_ENTROPY_K=$entropy_k \
+      ENV_ROUNDS=$rounds \
+      bash scripts/run_icrl.sh $Model AIME-TTT
+      echo "done with k=$k, entropy_k=$entropy_k, rounds=$rounds"
+      hf upload --repo-type model --private --token $HF_TOKEN ChilleD/synthesis ./results ICRL/results
+    done
+  done
+done

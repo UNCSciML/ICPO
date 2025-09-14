@@ -42,6 +42,8 @@ def _overlay_from_env(base: Dict[str, Any]) -> Dict[str, Any]:
         "k":              ("ENV_K", int),
         "rounds":         ("ENV_ROUNDS", int),
         "entropy_k":      ("ENV_ENTROPY_K", int),
+        "test_sample":    ("ENV_TEST_SAMPLE", int),
+        "seed":           ("ENV_SEED", int)
     }
 
     out = dict(base)
@@ -52,7 +54,8 @@ def _overlay_from_env(base: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 out[cfg_key] = caster(val)
             except Exception:
-                out[cfg_key] = val
+                print(f"invalid val: {val}")
+                sys.exit(1)
     return out
 
 if ALLOW_OVERWRITE:
@@ -68,6 +71,7 @@ _SENT_SPLIT = re.compile(r"[.!?]")
 
 ENABLE_PENALTY = None
 SUMMARY_LEN= 500
+USE_REWARD=True
 def debug_jsonl(filename: Union[str, Path], data: dict):
     """
     将单个 dict 写入 JSONL 文件，每行一个 JSON 对象。
@@ -156,7 +160,14 @@ def strip_reasoning(txt: str) -> str:
 
 
 def build_prompt(q: str, hist: Dict[str, List[str]]) -> str:
+    global USE_REWARD
     lines = [SYS_PROMPT.rstrip(), "", q.rstrip(), ""]
+    if USE_REWARD==False:
+        lines.append("previous attempts:")
+        lines += [f"[{i}]- {s}" for i,s in enumerate(hist["good"])]
+        return "\n".join(lines).rstrip()
+        
+   
     lines.append("bad ideas (reward 0):")
     lines += [f"[{i}]- {s}" for i,s in enumerate(hist["bad"])]
     lines.append("")
@@ -201,8 +212,11 @@ def delete_with_entropy(q:str,h: Dict[str, List[str]],model,tok,args,max_new):
     
 # ---------- update history ----------
 def update_history(h: Dict[str, List[str]], summary: str, reward: bool, q:str, model, tok, args, max_new):
+    global USE_REWARD
     """写入摘要到对应桶，并截断长度。summary 已保证非空。"""
     bucket = h["good"] if reward else h["bad"]
+    if USE_REWARD == False:
+        bucket =h['good']#ignore the pseudo reward
     if summary ==None:return 
     bucket.append(summary)
     if len(bucket)>MAX_KEEP and args.entropy ==True:#此时根据entropy来删多余任务
@@ -291,6 +305,22 @@ def mean_at_k(preds, refs):
     return sum(sum(_normalize(c) == _normalize(r) for c in cand)/len(cand)
                for cand, r in zip(preds, refs)) / len(preds)
 
+def maj_at_k(preds, refs):
+    ls=[]
+    for cand, r in zip(preds, refs):
+        dic={}
+        for c in cand:
+            num=_normalize(c)
+            count = dic.get(num,0)
+            dic[num]=count+1
+        sorted_ans = sorted(dic.items(), key=lambda x: x[1], reverse=True)
+        if sorted_ans[0][0]==_normalize(r):
+            ls.append(1.)
+        else:
+            ls.append(0.)
+    return sum(ls)/len(ls)
+    # return sum(sum(_normalize(c) == _normalize(r) for c in cand)/len(cand)
+    #            for cand, r in zip(preds, refs)) / len(preds)
 # =============================================================
 
 
@@ -358,14 +388,19 @@ def choose_entropy(pseudo, k_batch, qs, hist, model, tok, args, cache, max_new,o
         if summary:
             update_history(h,summary,reward, q, model, tok, args, max_new)
 
-     
+def set_seed(seed):
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 def set_global_variable(args):
     global ENABLE_PENALTY
     global SUMMARY_LEN
     global SYS_PROMPT
     global _SUMMARY_PROMPT
+    global USE_REWARD
     SUMMARY_LEN=args.summary_length
     ENABLE_PENALTY=args.enable_penalty
+    USE_REWARD=args.use_reward
     if "AIME" in args.task_dir:
         setting.BENCHMARK = "AIME"
     elif "AMC" in args.task_dir:
@@ -377,8 +412,10 @@ def set_global_variable(args):
     else:
         print("Not a valid benchmark")
         sys.exit(1)
-    SYS_PROMPT,_SUMMARY_PROMPT=get_prompt(setting.BENCHMARK)
-            
+    SYS_PROMPT,_SUMMARY_PROMPT=get_prompt(setting.BENCHMARK,USE_REWARD)
+    
+    set_seed(args.seed)
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model_path", required=True)
@@ -396,6 +433,10 @@ def main():
     ap.add_argument("--enable_penalty",type =bool,default =cfg("entropy_penalty", True))
     ap.add_argument("--summary_length",type = int ,default = cfg("summary_length",500))
     ap.add_argument("--answer_length",type = int ,default = cfg("answer_length",5000))
+    ap.add_argument("--final_gen_k",type = int ,default = cfg("final_gen_k",64))
+    ap.add_argument("--test_sample",type = int,default =cfg("test_sample",None))
+    ap.add_argument("--seed",type = int,default =cfg("seed",42))
+    ap.add_argument("--use_reward",type = bool,default =True)#For ablation study
     ap.add_argument_group
     args = ap.parse_args()
     
@@ -440,7 +481,8 @@ def main():
         "parquet" if file.endswith(".parquet") else "json",
         data_files=str(ds_path / file), split="train"
     )
-
+    if args.test_sample is not None:
+        dataset=dataset.select(range(args.test_sample))
     cache = PromptCache(out_dir / ".prompt_cache")
     preds, refs, ans_records = [], [], []
     wrote_example = False
@@ -497,7 +539,7 @@ def main():
         # ---------- evaluation ----------
         final_prompts = [build_prompt(q, h) for q, h in zip(qs, hist)]
         max_new = min(args.answer_length, args.ctx - max(len(tok(p).input_ids) for p in final_prompts))
-        final_k = generate_batch(model, tok, final_prompts, args.k,
+        final_k = generate_batch(model, tok, final_prompts, args.final_gen_k,
                                  max_new, args.temp, args.top_p)
         preds += final_k
 
@@ -537,6 +579,7 @@ def main():
 
     # ---------- write outputs ----------
     mean_k = round(mean_at_k(preds, refs) * 100, 2)
+    maj_k=round(maj_at_k(preds,refs)*100,2)
     (out_dir / "predictions.jsonl").write_text(
         "\n".join(json.dumps({"gens": g}, ensure_ascii=False) for g in preds),
         encoding="utf-8"
@@ -547,9 +590,15 @@ def main():
     )
 
     metric = {"model": Path(args.model_path).name, "task": ds_path.name,
-              "mean@k": mean_k, "k": args.k, "rounds": args.rounds,
+              "mean@k": mean_k,
+              "maj@k":maj_k,
+              "k": args.k, "rounds": args.rounds,
               "batch": args.batch, "temp": args.temp, "top_p": args.top_p,
               "context_len": args.ctx,
+              "entropy_k":args.entropy_k,
+              "final_gen_k":args.final_gen_k,
+              "task_number": len(dataset),
+              "seed": args.seed,
               "timestamp": datetime.datetime.now().isoformat(timespec="seconds")}
     (out_dir / "metrics.json").write_text(json.dumps(metric, indent=2),
                                           encoding="utf-8")

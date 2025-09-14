@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Dict, Any,Union
 import math
 import torch, yaml
+import sys
 from icrl.setting import setting
 # ---------------- Config & Debug ----------------
 DEBUG = True      # ⇦ 如无需日志，改为 False
@@ -20,6 +21,19 @@ SYS_PROMPT = None
 _SUMMARY_PROMPT = None
 
 AIME_SYS_PROMPT = (
+    "You are an AI mathematician. All content you output MUST be in English.\n"
+    "**You are only allowed to provide explanations in plain English. Do NOT write any code, pseudocode, or technical snippets. Explain the concept of XYZ in detail.**"
+    "Below are compressed solution ideas from previous attempts; each idea is tagged "
+    "with reward 1 (correct) or reward 0 (incorrect). Use the question and these ideas "
+    "to deduce the correct numeric answer.\n"
+    "**Finish all your reasoning, then on a NEW line output exactly one number "
+    "(the answer) and nothing else.**\n"
+    "Your final output MUST be in the format boxed{<number>}, where <number> is the "
+    "final numeric answer only (no expressions, variables, or additional text)."
+    "The content inside boxed{ } must be a decimal number, not a fraction or any other form."
+)
+
+AIME_SYS_PROMPT_NO_REWARD = (
     "You are an AI mathematician. All content you output MUST be in English.\n"
     "**You are only allowed to provide explanations in plain English. Do NOT write any code, pseudocode, or technical snippets. Explain the concept of XYZ in detail.**"
     "Below are compressed solution ideas from previous attempts; each idea is tagged "
@@ -91,7 +105,7 @@ MATH_SUMMARY_PROMPT = (
     "[Answer start]\n{}\n[Answer end]\n\n"
     "Summary:"
 )
-def get_prompt(bench_name):
+def get_prompt(bench_name,reward=True):
     mapping ={
         "AIME":(AIME_SYS_PROMPT,AIME_SUMMARY_PROMPT),
         "AMC":(AMC_SYS_PROMPT,AMC_SUMMARY_PROMPT),
@@ -99,6 +113,9 @@ def get_prompt(bench_name):
         "MATH":(MATH_SYS_PROMPT,MATH_SUMMARY_PROMPT)
     }
     sys_prompt,summary_prompt = mapping[bench_name]
+    if reward ==False:
+        sys_prompt=sys_prompt.replace("each idea is tagged with reward 1 (correct) or reward 0 (incorrect).","")
+
     return sys_prompt,summary_prompt
 
 
