@@ -10,7 +10,7 @@ import sys
 from icrl.setting import setting
 # ---------------- Config & Debug ----------------
 DEBUG = True      # ⇦ 如无需日志，改为 False
-MAX_KEEP = 5      # 每类历史最多保留条数
+MAX_KEEP = 10000      # 每类历史最多保留条数
 TENSOR_PARALLEL = torch.cuda.device_count()
 ALLOW_OVERWRITE= True
 
@@ -105,7 +105,7 @@ MATH_SUMMARY_PROMPT = (
     "[Answer start]\n{}\n[Answer end]\n\n"
     "Summary:"
 )
-def get_prompt(bench_name,reward=True):
+def get_prompt(bench_name,reward=True,rounds =5):
     mapping ={
         "AIME":(AIME_SYS_PROMPT,AIME_SUMMARY_PROMPT),
         "AMC":(AMC_SYS_PROMPT,AMC_SUMMARY_PROMPT),
@@ -115,6 +115,8 @@ def get_prompt(bench_name,reward=True):
     sys_prompt,summary_prompt = mapping[bench_name]
     if reward ==False:
         sys_prompt=sys_prompt.replace("each idea is tagged with reward 1 (correct) or reward 0 (incorrect).","")
+    if rounds ==0:
+        sys_prompt=sys_prompt.replace("**Below are compressed solution ideas from previous attempts; each idea is tagged with reward 1 (correct) or reward 0 (incorrect). Use the question and these ideas to deduce the correct numeric answer.","")
 
     return sys_prompt,summary_prompt
 

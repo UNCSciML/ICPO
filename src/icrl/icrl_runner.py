@@ -34,7 +34,8 @@ from icrl.setting import setting
 
 _cfg: Dict[str, Any] = yaml.safe_load(CONFIG_YML.open()) if CONFIG_YML.is_file() else {}
 
-
+def str2bool(v: str) -> bool:
+    return v.lower() in ("1", "true", "yes", "y", "on")
 def _overlay_from_env(base: Dict[str, Any]) -> Dict[str, Any]:
     env_map = {
         "summary_length": ("ENV_SUMMARY_LEN", int),
@@ -43,7 +44,10 @@ def _overlay_from_env(base: Dict[str, Any]) -> Dict[str, Any]:
         "rounds":         ("ENV_ROUNDS", int),
         "entropy_k":      ("ENV_ENTROPY_K", int),
         "test_sample":    ("ENV_TEST_SAMPLE", int),
-        "seed":           ("ENV_SEED", int)
+        "seed":           ("ENV_SEED", int),
+        "entropy":        ("ENV_ENTROPY",str2bool),
+        "start_idx":      ("ENV_START_IDX",int),
+        "end_idx":        ("ENV_END_IDX",int)
     }
 
     out = dict(base)
@@ -72,6 +76,7 @@ _SENT_SPLIT = re.compile(r"[.!?]")
 ENABLE_PENALTY = None
 SUMMARY_LEN= 500
 USE_REWARD=True
+BASE_MODEL=False
 def debug_jsonl(filename: Union[str, Path], data: dict):
     """
     将单个 dict 写入 JSONL 文件，每行一个 JSON 对象。
@@ -161,12 +166,14 @@ def strip_reasoning(txt: str) -> str:
 
 def build_prompt(q: str, hist: Dict[str, List[str]]) -> str:
     global USE_REWARD
+    global BASE_MODEL
     lines = [SYS_PROMPT.rstrip(), "", q.rstrip(), ""]
     if USE_REWARD==False:
         lines.append("previous attempts:")
         lines += [f"[{i}]- {s}" for i,s in enumerate(hist["good"])]
         return "\n".join(lines).rstrip()
-        
+    if BASE_MODEL==True:
+        return "\n".join(lines).rstrip()    
    
     lines.append("bad ideas (reward 0):")
     lines += [f"[{i}]- {s}" for i,s in enumerate(hist["bad"])]
@@ -398,6 +405,7 @@ def set_global_variable(args):
     global SYS_PROMPT
     global _SUMMARY_PROMPT
     global USE_REWARD
+    global BASE_MODEL
     SUMMARY_LEN=args.summary_length
     ENABLE_PENALTY=args.enable_penalty
     USE_REWARD=args.use_reward
@@ -412,7 +420,9 @@ def set_global_variable(args):
     else:
         print("Not a valid benchmark")
         sys.exit(1)
-    SYS_PROMPT,_SUMMARY_PROMPT=get_prompt(setting.BENCHMARK,USE_REWARD)
+    if args.rounds==0:
+        BASE_MODEL=True
+    SYS_PROMPT,_SUMMARY_PROMPT=get_prompt(setting.BENCHMARK,USE_REWARD,args.rounds)
     
     set_seed(args.seed)
 
@@ -435,6 +445,8 @@ def main():
     ap.add_argument("--answer_length",type = int ,default = cfg("answer_length",5000))
     ap.add_argument("--final_gen_k",type = int ,default = cfg("final_gen_k",64))
     ap.add_argument("--test_sample",type = int,default =cfg("test_sample",None))
+    ap.add_argument("--start_idx",type = int ,default =cfg("start_idx",None))
+    ap.add_argument("--end_idx",type = int ,default =cfg("end_idx",None))
     ap.add_argument("--seed",type = int,default =cfg("seed",42))
     ap.add_argument("--use_reward",type = bool,default =True)#For ablation study
     ap.add_argument_group
@@ -483,6 +495,10 @@ def main():
     )
     if args.test_sample is not None:
         dataset=dataset.select(range(args.test_sample))
+    start_idx = 0 if args.start_idx is None else args.start_idx
+    end_idx = len(dataset) if args.end_idx is None else args.end_idx
+    dataset=dataset.select(range(start_idx,end_idx))
+    
     cache = PromptCache(out_dir / ".prompt_cache")
     preds, refs, ans_records = [], [], []
     wrote_example = False
@@ -507,6 +523,7 @@ def main():
                 cache.put(key, p); prompts.append(p)
 
             max_new = min(args.answer_length, args.ctx - max(len(tok(p).input_ids) for p in prompts))
+            max_new=max(max_new,1024)
             k_batch = generate_batch(model, tok, prompts, args.k,
                                      max_new, args.temp, args.top_p)
             pseudo  = [_majority_raw(lst) for lst in k_batch]
@@ -539,6 +556,7 @@ def main():
         # ---------- evaluation ----------
         final_prompts = [build_prompt(q, h) for q, h in zip(qs, hist)]
         max_new = min(args.answer_length, args.ctx - max(len(tok(p).input_ids) for p in final_prompts))
+        max_new=max(max_new,1024)
         final_k = generate_batch(model, tok, final_prompts, args.final_gen_k,
                                  max_new, args.temp, args.top_p)
         preds += final_k
@@ -576,6 +594,10 @@ def main():
                 "candidates": cand_list,
                 "normalized_candidates": [c["numeric"] for c in cand_list]
             })
+            (out_dir / "answer.json").write_text(
+            json.dumps(ans_records, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+            )
 
     # ---------- write outputs ----------
     mean_k = round(mean_at_k(preds, refs) * 100, 2)
