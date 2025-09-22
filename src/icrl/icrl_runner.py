@@ -456,7 +456,6 @@ def main():
 
 
     
-    
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     out_dir = Path(f"{args.output_dir}_{timestamp}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -483,7 +482,7 @@ def main():
         tokenizer_mode="auto",    
         tensor_parallel_size=TENSOR_PARALLEL,  
         enable_prefix_caching=True,  
-        enforce_eager=True          
+        enforce_eager=True
     )
     tok = model.get_tokenizer()
     # ---------- load dataset ----------
@@ -523,7 +522,7 @@ def main():
                 cache.put(key, p); prompts.append(p)
 
             max_new = min(args.answer_length, args.ctx - max(len(tok(p).input_ids) for p in prompts))
-            max_new=max(max_new,1024)
+            max_new=max(max_new,1)
             k_batch = generate_batch(model, tok, prompts, args.k,
                                      max_new, args.temp, args.top_p)
             pseudo  = [_majority_raw(lst) for lst in k_batch]
@@ -556,7 +555,7 @@ def main():
         # ---------- evaluation ----------
         final_prompts = [build_prompt(q, h) for q, h in zip(qs, hist)]
         max_new = min(args.answer_length, args.ctx - max(len(tok(p).input_ids) for p in final_prompts))
-        max_new=max(max_new,1024)
+        max_new=max(max_new,1)
         final_k = generate_batch(model, tok, final_prompts, args.final_gen_k,
                                  max_new, args.temp, args.top_p)
         preds += final_k
@@ -589,7 +588,7 @@ def main():
                           "correct": bool(_normalize(a) and _normalize(a) == ref_norm)}
                          for a in klist]
             ans_records.append({
-                "id": ex.get("id", st + idx),
+                "id": ex.get("id", start_idx+st + idx),
                 "ref": ref_norm,
                 "candidates": cand_list,
                 "normalized_candidates": [c["numeric"] for c in cand_list]
