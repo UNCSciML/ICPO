@@ -33,7 +33,15 @@ from icrl.utility import _normalize
 from icrl.setting import setting
 
 _cfg: Dict[str, Any] = yaml.safe_load(CONFIG_YML.open()) if CONFIG_YML.is_file() else {}
+import subprocess
 
+def get_total_gpu_mem():
+    result = subprocess.run(
+        ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,nounits,noheader"],
+        capture_output=True, text=True
+    )
+    mem_list = [int(x) for x in result.stdout.strip().split("\n")]
+    return sum(mem_list) / 1024  # MB -> GB
 def str2bool(v: str) -> bool:
     return v.lower() in ("1", "true", "yes", "y", "on")
 def _overlay_from_env(base: Dict[str, Any]) -> Dict[str, Any]:
@@ -47,7 +55,9 @@ def _overlay_from_env(base: Dict[str, Any]) -> Dict[str, Any]:
         "seed":           ("ENV_SEED", int),
         "entropy":        ("ENV_ENTROPY",str2bool),
         "start_idx":      ("ENV_START_IDX",int),
-        "end_idx":        ("ENV_END_IDX",int)
+        "end_idx":        ("ENV_END_IDX",int),
+        "use_gt_reward":  ("ENV_USE_GT_REWARD",str2bool),
+        "epsilon":         ("ENV_EPSILON",float)
     }
 
     out = dict(base)
@@ -77,6 +87,10 @@ ENABLE_PENALTY = None
 SUMMARY_LEN= 500
 USE_REWARD=True
 BASE_MODEL=False
+TOTAL_TOKEN=0
+COUNT_GPU_MEM=False
+PEAK_GPU_GB=0
+EPSILON=0
 def debug_jsonl(filename: Union[str, Path], data: dict):
     """
     将单个 dict 写入 JSONL 文件，每行一个 JSON 对象。
@@ -233,7 +247,7 @@ def update_history(h: Dict[str, List[str]], summary: str, reward: bool, q:str, m
 # ---------- LLM wrappers ----------
 def _gen(model, tok, prompt: str, max_new: int,
          temp: float, top_p: float) -> str:
-
+    global TOTAL_TOKEN
     sampling_params = SamplingParams(
         n=1,
         temperature=temp,
@@ -244,7 +258,9 @@ def _gen(model, tok, prompt: str, max_new: int,
        stop_token_ids=[tok.eos_token_id], 
     )
     outputs = model.generate([prompt], sampling_params)
-   
+    out = outputs[0].outputs[0]
+    num_tokens = len(out.token_ids)
+    TOTAL_TOKEN += num_tokens
     return outputs[0].outputs[0].text.strip()
 
 
@@ -252,7 +268,7 @@ def generate_batch(model, tok, prompts: List[str], n: int, max_new: int,
                    temp: float, top_p: float) -> List[List[str]]:
     if DEBUG and prompts:
         logging.info(f"[generate_batch] first prompt len={len(prompts[0])}")
-
+    global TOTAL_TOKEN, PEAK_GPU_GB, COUNT_GPU_MEM
     
     sampling_params = SamplingParams(
         n=n,                       # 等价于 num_return_sequences
@@ -274,10 +290,13 @@ def generate_batch(model, tok, prompts: List[str], n: int, max_new: int,
             strip_reasoning(o.text) 
             for o in out.outputs
         ]
+        num_tokens = sum([len(o.token_ids) for o in out.outputs])
+        TOTAL_TOKEN+=num_tokens
         res.append(gens)
         if DEBUG and i == 0:
             logging.info(f"[generate_batch] sample gens={gens[:3]}")
-
+    if COUNT_GPU_MEM:
+            PEAK_GPU_GB = max(PEAK_GPU_GB, get_total_gpu_mem())
     return res
 
 
@@ -331,11 +350,11 @@ def maj_at_k(preds, refs):
 # =============================================================
 
 
-def choose_entropy(pseudo, k_batch, qs, hist, model, tok, args, cache, max_new,out_dir):
+def choose_entropy(pseudo, k_batch, qs, hist, model, tok, args, cache, max_new,out_dir,round):
     import copy
     from dataclasses import dataclass
     import random
-
+    global EPSILON
     @dataclass
     class Candidate:
         idx: int
@@ -376,13 +395,23 @@ def choose_entropy(pseudo, k_batch, qs, hist, model, tok, args, cache, max_new,o
         prompts = [build_prompt(c.question, c.hist) for c in candidates]
         new_batch = generate_batch(model, tok, prompts, args.entropy_k, max_new, args.temp, args.top_p)
         entropies = [_get_entropy(lst,args.entropy_k) for lst in new_batch]
+        #############
+        final_out_file = out_dir / "entropy.jsonl"
+        with open(final_out_file, "a", encoding="utf-8") as f:
+            json_line = json.dumps({"round": round, "entropies": entropies}, ensure_ascii=False)
+            f.write(json_line + "\n")
+        ############
         if DEBUG:
             logging.info(f"[eval] entropy sample = {entropies}")
         if any(e is not None for e in entropies):
-            min_idx = min(
-                [(i, e) for i, e in enumerate(entropies) if e is not None],
-                key=lambda x: x[1]
-            )[0] # 如果有能计算entropy的，选择argmin
+            valid_idx= [(i, e) for i, e in enumerate(entropies) if e is not None]
+            if random.random() < EPSILON:
+                min_idx = random.choice(valid_idx)[0]
+            else:
+                min_idx = min(
+                    valid_idx,
+                    key=lambda x: x[1]
+                )[0] # 如果有能计算entropy的，选择argmin
         else:
             min_idx = random.randint(0, len(candidates) - 1)#没有能计算entropy的 随便选一个
 
@@ -406,6 +435,7 @@ def set_global_variable(args):
     global _SUMMARY_PROMPT
     global USE_REWARD
     global BASE_MODEL
+    global EPSILON
     SUMMARY_LEN=args.summary_length
     ENABLE_PENALTY=args.enable_penalty
     USE_REWARD=args.use_reward
@@ -449,14 +479,18 @@ def main():
     ap.add_argument("--end_idx",type = int ,default =cfg("end_idx",None))
     ap.add_argument("--seed",type = int,default =cfg("seed",42))
     ap.add_argument("--use_reward",type = bool,default =True)#For ablation study
+    ap.add_argument("--use_gt_reward",type = bool,default =cfg("use_gt_reward",False))#For ablation study
+    ap.add_argument("--epsilon",type =float,default = cfg("epsilon",0.0))
     ap.add_argument_group
     args = ap.parse_args()
     
     set_global_variable(args)
 
-
     
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+   
+    start_time = datetime.datetime.now()
+    timestamp = start_time.strftime("%Y%m%d_%H%M%S_%f")
     out_dir = Path(f"{args.output_dir}_{timestamp}")
     out_dir.mkdir(parents=True, exist_ok=True)
     args_dict = vars(args)
@@ -475,16 +509,27 @@ def main():
         logging.info("DEBUG MODE ON")
 
 
-
-    model = LLM( # 用VLLM 因为其运行速度更快，支持prefix caching等
-        model=args.model_path,
-        trust_remote_code=True,
-        tokenizer_mode="auto",    
-        tensor_parallel_size=TENSOR_PARALLEL,  
-        enable_prefix_caching=True,  
-        enforce_eager=True
-    )
+    if os.environ.get("VLLM_ALLOW_LONG_MAX_MODEL_LEN") == "1":
+        model = LLM( 
+            model=args.model_path,
+            trust_remote_code=True,
+            tokenizer_mode="auto",    
+            tensor_parallel_size=TENSOR_PARALLEL,  
+            enable_prefix_caching=True,  
+            enforce_eager=True,
+            max_model_len=8192,
+        )
+    else:
+         model = LLM( 
+            model=args.model_path,
+            trust_remote_code=True,
+            tokenizer_mode="auto",    
+            tensor_parallel_size=TENSOR_PARALLEL,  
+            enable_prefix_caching=True,  
+            enforce_eager=True
+        )
     tok = model.get_tokenizer()
+
     # ---------- load dataset ----------
     ds_path = Path(args.task_dir)
     file = "test.parquet" if (ds_path / "test.parquet").exists() else "test.json"
@@ -525,8 +570,10 @@ def main():
             max_new=max(max_new,1)
             k_batch = generate_batch(model, tok, prompts, args.k,
                                      max_new, args.temp, args.top_p)
+          
             pseudo  = [_majority_raw(lst) for lst in k_batch]
-
+            if args.use_gt_reward ==True:
+                pseudo=refs_batch
             if args.entropy ==False:
                 rand_idx = [random.randrange(args.k) for _ in prompts]
                 picked   = [lst[i] for lst, i in zip(k_batch, rand_idx)]
@@ -549,8 +596,10 @@ def main():
                     args= args,
                     cache = cache,
                     max_new=max_new,
-                    out_dir=out_dir
+                    out_dir=out_dir,
+                    round=r
                 )
+
 
         # ---------- evaluation ----------
         final_prompts = [build_prompt(q, h) for q, h in zip(qs, hist)]
@@ -620,7 +669,10 @@ def main():
               "final_gen_k":args.final_gen_k,
               "task_number": len(dataset),
               "seed": args.seed,
-              "timestamp": datetime.datetime.now().isoformat(timespec="seconds")}
+              "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+              "total_time": (datetime.datetime.now() - start_time).total_seconds(),
+              "Peak_GPU": round(PEAK_GPU_GB, 2) ,
+              "Tokens":TOTAL_TOKEN}
     (out_dir / "metrics.json").write_text(json.dumps(metric, indent=2),
                                           encoding="utf-8")
 

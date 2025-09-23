@@ -28,4 +28,6 @@ entropy_k:    16       #计算entropy时采样数量 default 16
 entropy_penalty : True  #是否在计算entropy启用penalty(如果一个答案不合法，entropy+= log(entropy_k)/entropy_k)
 summary_length : 500
 answer_length : 5000
-final_gen_k: 16
+final_gen_k: 16 #最后evaluation生成的answer数量
+epsilon:     0.0
+use_gt_reward: False
