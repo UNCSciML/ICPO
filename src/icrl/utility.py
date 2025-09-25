@@ -190,17 +190,19 @@ def _normalize(solution_str: str):
 
     # ---------------- 通用答案 ----------------
     elif benchmark == "MATH":
-        match = re.findall(r"boxed\{([^\}]+)\}", solution_str)
-        if match:
-            raw_ans = match[-1].strip()
-        else:
-            # fallback: 最后一行非空字符串
-            lines = [line.strip() for line in solution_str.splitlines() if line.strip()]
-            if lines:
-                raw_ans = lines[-1]
-            else:
-                raw_ans = solution_str.strip()
-        return raw_ans
+        # match = re.findall(r"boxed\{([^\}]+)\}", solution_str)
+        # if match:
+        #     raw_ans = match[-1].strip()
+        # else:
+        #     # fallback: 最后一行非空字符串
+        #     lines = [line.strip() for line in solution_str.splitlines() if line.strip()]
+        #     if lines:
+        #         raw_ans = lines[-1]
+        #     else:
+        #         raw_ans = solution_str.strip()
+        # return raw_ans
+        from icrl.math_norm import mathd_normalize_answer
+        return mathd_normalize_answer(solution_str)
 
     else:
         raise ValueError(f"{benchmark} is not a valid benchmark.")

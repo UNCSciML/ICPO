@@ -316,8 +316,7 @@ def _compress_answer(ans_raw: str, model, tok,output_dir=None) -> str:
     prompt = _SUMMARY_PROMPT.format(ans_raw.strip())
 
     model_name = model.llm_engine.model_config.model
-    if "7B" not in model_name:
-        prompt=prompt.replace("100",str(SUMMARY_LEN))
+    
 
     
     summary = _gen(model, tok, prompt, max_new=SUMMARY_LEN, temp=0.05, top_p=0.9).strip()
