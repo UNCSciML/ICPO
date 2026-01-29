@@ -72,10 +72,29 @@ Key observations:
 
 ---
 
-## ✨ Getting Started
 
-### Environment Setup
+## ✨Getting Started
 
-```bash
-conda env create -f environment.yml
-conda activate ICRL
+### Env Setup
+
+
+### ....
+
+
+## 📨Contact
+
+- Tianrun Yu: 
+- Yuxiao Yang: 
+
+## 🎈Citation
+If you find TTRL helpful, please cite us.
+
+```bibtex
+@article{
+}
+```
+
+## 🌟 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yangyuxiao-sjtu/ICRL&type=Date)](https://www.star-history.com/#yangyuxiao-sjtu/ICRL&Date)
+
