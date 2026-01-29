@@ -79,13 +79,13 @@ Key observations:
 
 
 ### ....
-
+---
 
 ## 📨Contact
 
 - Tianrun Yu: 
 - Yuxiao Yang: 
-
+---
 ## 🎈Citation
 If you find TTRL helpful, please cite us.
 
@@ -93,7 +93,7 @@ If you find TTRL helpful, please cite us.
 @article{
 }
 ```
-
+---
 ## 🌟 Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=yangyuxiao-sjtu/ICRL&type=Date)](https://www.star-history.com/#yangyuxiao-sjtu/ICRL&Date)
