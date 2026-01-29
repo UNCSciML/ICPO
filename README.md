@@ -67,7 +67,7 @@ Key observations:
 - Performance improves monotonically with increased sampling budget and reasoning rounds.
 
 <p align="center">
-  <img src="figs/AIME_cmp.png" alt="Main Results of ME-ICPO" style="width: 65%;">
+  <img src="figs/AIME_cmp.png" alt="Main Results of ME-ICPO" style="width: 80%;">
 </p>
 
 ---
