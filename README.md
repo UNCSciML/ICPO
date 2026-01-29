@@ -15,7 +15,6 @@
   </p>
   <p>
     <a href="#getting-started"><b>✨ Getting Started</b></a> •
-    <a href="#configuration"><b>⚙️ Configuration</b></a> •
     <a href="#contact"><b>📨 Contact</b></a> •
     <a href="#citation"><b>🎈 Citation</b></a>
   </p>
@@ -41,7 +40,6 @@ ICPO views multi-round reasoning as a **response-level policy optimization proce
 - receives self-assessed rewards,
 - and updates the policy implicitly through in-context roll-ins.
 
----
 
 ### ME-ICPO
 
