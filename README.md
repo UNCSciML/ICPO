@@ -52,7 +52,7 @@ It selects candidate responses that, when rolled into the context, **minimize th
 > **This repository contains a reference implementation of ME-ICPO**.
 
 <p align="center">
-  <img src="figs/overview.png" alt="Overview of ICPO and ME-ICPO" style="width: 80%;">
+  <img src="figs/overview.png" alt="Overview of ICPO" style="width: 80%;">
 </p>
 
 ---
