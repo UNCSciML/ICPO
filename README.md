@@ -1,27 +1,81 @@
-# ICRL – Information-Guided Chain-of-Thought Reinforcement Loop
+<div align="center">
 
-This repo contains our reference implementation of **ICRL** (Entropy-Minimisation variant) together with evaluation scripts and YAML-driven experiment management.
+# ME-ICPO: Minimum-Entropy In-Context Policy Optimization
+
+[![Paper](https://img.shields.io/badge/paper-ICLR2026-A42C25?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/)
+[![Github](https://img.shields.io/badge/ME--ICPO-000000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yangyuxiao-sjtu/ICRL)
+
+</div>
+
+<div align="center" style="font-family: Arial, sans-serif;">
+  <p>
+    <a href="#news"><b>🎉 News</b></a> •
+    <a href="#introduction"><b>📖 Introduction</b></a> •
+    <a href="#main-results"><b>📊 Main Results</b></a>
+  </p>
+  <p>
+    <a href="#getting-started"><b>✨ Getting Started</b></a> •
+    <a href="#configuration"><b>⚙️ Configuration</b></a> •
+    <a href="#contact"><b>📨 Contact</b></a> •
+    <a href="#citation"><b>🎈 Citation</b></a>
+  </p>
+</div>
+
+> In-context learning can implement policy optimization — ME-ICPO is one such instantiation.
 
 ---
 
-## 1  Quick start
+## 🎉 News
+- **[2026]** ICPO and ME-ICPO are accepted to **ICLR 2026**.
+- **[2025]** Initial release of the ME-ICPO reference implementation.
+- **[2025]** Baselines and ablation settings added.
 
-$ bash scripts/download_model.sh
+---
 
-$ conda activate ICRL          
+## 📖 Introduction
 
-$ bash scripts/run_icrl.sh  Qwen/Qwen2.5-Math-7B AIME-TTT
+**In-Context Policy Optimization (ICPO)** is a general framework proposed in our paper for understanding and designing **test-time scaling algorithms** for large language model reasoning.
 
-Set ALLOW_OVERWRITE= True in run_icrl.py to overwrite hyperparameters 
-主要调整参数
-k:            64         # 每轮采样数量 
+ICPO views multi-round reasoning as a **response-level policy optimization process**, where each round:
+- samples candidate solutions,
+- receives self-assessed rewards,
+- and updates the policy implicitly through in-context roll-ins.
 
-context_len:  8192
+---
 
-rounds:       5          # 轮数
-entropy: True         #是否启用entropy 来挑选sample
-entropy_k:    16       #计算entropy时采样数量 default 16
-entropy_penalty : True  #是否在计算entropy启用penalty(如果一个答案不合法，entropy+= log(entropy_k)/entropy_k)
-summary_length : 500 #summary 生成max token 数， 需要保证 summary_length*rounds <context_len (需要给final answer 留出足够空间)
+### ME-ICPO
 
+**Minimum-Entropy ICPO (ME-ICPO)** is a concrete algorithm instantiated under the ICPO framework.
 
+It selects candidate responses that, when rolled into the context, **minimize the predictive entropy of future generations**, thereby stabilizing subsequent reasoning rounds under noisy self-reward signals.
+
+> **This repository contains a reference implementation of ME-ICPO**, not the full ICPO framework.
+
+<p align="center">
+  <img src="figs/overview.png" alt="Overview of ICPO and ME-ICPO" style="width: 80%;">
+</p>
+
+---
+
+## 📊 Main Results
+
+ME-ICPO consistently improves reasoning performance across math and logic benchmarks.
+
+Key observations:
+- ME-ICPO significantly outperforms majority voting and reward-only selection.
+- Entropy-based selection is critical for stability under noisy self-reward.
+- Performance improves monotonically with increased sampling budget and reasoning rounds.
+
+<p align="center">
+  <img src="figs/results.png" alt="Main Results of ME-ICPO" style="width: 65%;">
+</p>
+
+---
+
+## ✨ Getting Started
+
+### Environment Setup
+
+```bash
+conda env create -f environment.yml
+conda activate ICRL
