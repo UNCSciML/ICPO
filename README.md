@@ -26,7 +26,7 @@
 ---
 
 ## 🎉 News
-- **[2026]** ICPO and ME-ICPO are accepted to **ICLR 2026**.
+- **[2026]** ICPO are accepted to **ICLR 2026**.
 - **[2025]** Initial release of the ME-ICPO reference implementation.
 - **[2025]** Baselines and ablation settings added.
 
@@ -49,7 +49,7 @@ ICPO views multi-round reasoning as a **response-level policy optimization proce
 
 It selects candidate responses that, when rolled into the context, **minimize the predictive entropy of future generations**, thereby stabilizing subsequent reasoning rounds under noisy self-reward signals.
 
-> **This repository contains a reference implementation of ME-ICPO**, not the full ICPO framework.
+> **This repository contains a reference implementation of ME-ICPO**.
 
 <p align="center">
   <img src="figs/overview.png" alt="Overview of ICPO and ME-ICPO" style="width: 80%;">
