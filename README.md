@@ -2,7 +2,7 @@
 
 # ME-ICPO: Minimum-Entropy In-Context Policy Optimization
 
-[![Paper](https://img.shields.io/badge/paper-ICLR2026-A42C25?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/)
+[![Paper](https://img.shields.io/badge/paper-ICLR2026-A42C25?style=for-the-badge&logo=arxiv&logoColor=white)](https://openreview.net/pdf?id=TAthdtPe7k)
 [![Github](https://img.shields.io/badge/ME--ICPO-000000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yangyuxiao-sjtu/ICRL)
 
 </div>
