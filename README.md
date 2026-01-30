@@ -71,18 +71,38 @@ Key observations:
 ---
 
 
-## ✨Getting Started
+## ✨ Getting Started
+Follow the steps below to set up the environment and run the **ME-ICRL** framework.
 
-### Env Setup
+## Environment Setup
 
+### Create the environment
+```bash
+conda create -n icrl python=3.11.7
+conda activate icrl
+```
+### Install required packages 
+```
+pip install -r requirements.txt
+```
+### Download required models
 
-### ....
+```
+python models/download.py --models  Qwen2.5-Math-7B
+```
+The model will be downloaded to ``ICRL/models/.``
+## Run ME-ICRL
+```bash
+ scripts/run_icrl.sh Qwen/Qwen2.5-Math-7B AIME-TTT
+```
+To conduct different experiments, simply change the model and dataset.
+
 ---
 
 ## 📨Contact
 
 - Tianrun Yu: 
-- Yuxiao Yang: 
+- Yuxiao Yang: yxyang@unc.edu
 ---
 ## 🎈Citation
 If you find TTRL helpful, please cite us.
