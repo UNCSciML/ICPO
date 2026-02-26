@@ -72,7 +72,7 @@ Key observations:
 
 
 ## ✨ Getting Started
-Follow the steps below to set up the environment and run the **ME-ICRL** framework.
+Follow the steps below to set up the environment and run the **ME-ICPO** framework.
 
 ## Environment Setup
 
@@ -101,11 +101,11 @@ To conduct different experiments, simply change the model and dataset.
 
 ## 📨Contact
 
-- Tianrun Yu: 
+- Tianrun Yu: tianruny@byu.edu
 - Yuxiao Yang: yxyang@unc.edu
 ---
 ## 🎈Citation
-If you find TTRL helpful, please cite us.
+If you find ICPO helpful, please cite us.
 
 ```bibtex
 @article{
